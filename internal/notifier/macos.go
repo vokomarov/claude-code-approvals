@@ -11,12 +11,13 @@ import (
 
 const maxMacOSMessageLen = 200
 
-// TruncateForMacOS truncates a string to 200 characters for the macOS notification message.
+// TruncateForMacOS truncates a string to 200 Unicode characters for the macOS notification message.
 func TruncateForMacOS(s string) string {
-	if len(s) <= maxMacOSMessageLen {
+	runes := []rune(s)
+	if len(runes) <= maxMacOSMessageLen {
 		return s
 	}
-	return s[:197] + "..."
+	return string(runes[:197]) + "..."
 }
 
 // IsAvailable returns true if terminal-notifier is on PATH.
@@ -55,11 +56,16 @@ func Notify(ctx context.Context, title, message, phpstormBundleID string, timeou
 		line := strings.TrimSpace(scanner.Text())
 		if line == "Approve" || line == "Deny" {
 			result = line
+			break // first valid action wins; stop reading
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Warn("error reading terminal-notifier output", "err", err)
 	}
 
 	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
 		slog.Warn("terminal-notifier exited with error", "err", err)
 	}
+	// result is "Approve", "Deny", or "" (dismissed / timed out / context cancelled)
 	return result, nil
 }
