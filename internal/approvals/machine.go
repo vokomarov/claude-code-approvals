@@ -6,18 +6,28 @@ import (
 )
 
 // MachineOpts configures the state machine for a single request.
+//
+// OnMacos and OnTelegram are notification callbacks triggered at their configured
+// times. They are responsible for sending the external notification (e.g. spawning
+// terminal-notifier or sending a Telegram message) and writing the result to
+// req.Decision. They must NOT call req.Cancel() themselves — context cleanup is
+// the consumer's responsibility (typically the MCP handler after reading Decision).
 type MachineOpts struct {
 	MacosSeconds    int    // 0 = skip macOS notification
 	TelegramSeconds int    // 0 = skip Telegram notification
-	TotalSeconds    int    // hard ceiling
-	TimeoutPolicy   string // "allow" | "deny"
+	TotalSeconds    int    // hard ceiling; always runs
+	TimeoutPolicy   string // "allow" | "deny" — applied when total timeout fires
 	OnMacos         func(*ApprovalRequest)
 	OnTelegram      func(*ApprovalRequest)
 }
 
-// RunMachine starts background goroutines for a request.
-// It returns immediately. Goroutines stop when a decision is written
-// to req.Decision or when req.Cancel() is called.
+// RunMachine starts background goroutines for a request and returns immediately.
+//
+// Goroutines stop when req.Cancel() is called. The caller (MCP handler) is
+// responsible for calling req.Cancel() after reading req.Decision, which stops
+// any pending notification goroutines. The total-timeout goroutine is the only
+// goroutine within the machine that writes to req.Decision; notification callbacks
+// (OnMacos, OnTelegram) write to it externally via their notifier implementations.
 func RunMachine(req *ApprovalRequest, opts MachineOpts) {
 	ctx, cancel := context.WithCancel(context.Background())
 

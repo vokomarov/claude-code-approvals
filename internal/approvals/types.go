@@ -19,6 +19,11 @@ type ApprovalRequest struct {
 	ToolInput   string // raw JSON from Claude Code
 	ProjectPath string // daemon CWD at startup; may be empty
 	CreatedAt   time.Time
-	Decision    chan Decision // capacity 1; first write wins
-	Cancel      context.CancelFunc
+	// Decision receives the outcome via a non-blocking send. Capacity is 1;
+	// the first write wins and subsequent writes are silently dropped.
+	// Only notification handlers (OnMacos, OnTelegram) or the total-timeout
+	// goroutine write to this channel. The MCP handler reads it and then calls
+	// Cancel to stop any remaining machine goroutines.
+	Decision chan Decision
+	Cancel   context.CancelFunc
 }
