@@ -15,6 +15,8 @@ const (
 )
 
 // Enable injects the cc-approvals MCP server and permissionPromptTool into settings.json.
+// The port parameter specifies the SSE server's listening port and is embedded in the
+// MCP server URL (e.g. http://localhost:9753/mcp).
 // Creates the file if it does not exist. Atomic write via temp file + rename.
 func Enable(path string, port int) error {
 	data, err := readOrEmpty(path)
