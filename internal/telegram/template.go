@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// maxToolInputLen truncates ToolInput before rendering to leave ~296 chars
+// of buffer for template boilerplate within Telegram's 4096-char message limit.
 const maxToolInputLen = 3800
 
 const defaultTemplate = `🔐 Claude Code Approval Required
