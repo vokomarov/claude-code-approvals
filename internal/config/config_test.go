@@ -122,3 +122,41 @@ func TestDefaultConfigPath(t *testing.T) {
 		t.Error("expected non-empty default path")
 	}
 }
+
+func TestLoadMissingFile(t *testing.T) {
+	_, err := config.Load("/nonexistent/path/config.yaml")
+	if err == nil {
+		t.Error("expected error for missing file")
+	}
+}
+
+func TestLoadMalformedYAML(t *testing.T) {
+	path := writeTempConfig(t, `{not valid yaml: [}`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Error("expected error for malformed YAML")
+	}
+}
+
+func TestValidationMissingClaudeSettings(t *testing.T) {
+	path := writeTempConfig(t, `
+telegram:
+  bot_token: "tok"
+  chat_id: 123
+timeouts:
+  macos_notification_seconds: 0
+  telegram_notification_seconds: 0
+  total_timeout_seconds: 60
+  timeout_policy: deny
+macos:
+  phpstorm_bundle_id: "com.jetbrains.phpstorm"
+daemon:
+  port: 9753
+paths:
+  claude_settings: ""
+`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Error("expected error for empty claude_settings")
+	}
+}
