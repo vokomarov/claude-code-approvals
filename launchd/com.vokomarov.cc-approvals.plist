@@ -22,9 +22,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/cc-approvals.log</string>
+    <string>/Users/vokomarov/Library/Logs/cc-approvals/cc-approvals.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/tmp/cc-approvals-error.log</string>
+    <string>/Users/vokomarov/Library/Logs/cc-approvals/cc-approvals-error.log</string>
 </dict>
 </plist>

@@ -23,7 +23,6 @@ type Server struct {
 	store      *approvals.Store
 	bot        *telegram.Bot
 	httpServer *http.Server
-	mcpServer  *server.SSEServer
 }
 
 // New creates a Server. Returns an error if prerequisites fail
@@ -110,7 +109,6 @@ func (s *Server) Run(ctx context.Context) error {
 				select {
 				case req.Decision <- approvals.Decision{Value: decision, Source: "macos"}:
 					slog.Info("macOS decision received", "id", req.ID, "decision", decision)
-					req.Cancel()
 				default:
 				}
 			}()
