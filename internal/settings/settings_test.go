@@ -32,89 +32,123 @@ func readJSON(t *testing.T, path string) map[string]interface{} {
 	return out
 }
 
-func TestEnableInjectsKeys(t *testing.T) {
+func TestInstallWritesHookEntry(t *testing.T) {
 	path := writeTempSettings(t, `{"theme": "dark"}`)
-	if err := settings.Enable(path, 9753); err != nil {
+	if err := settings.Install(path, "/usr/local/bin/claude-code-approvals"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := readJSON(t, path)
-	if got["permissionPromptTool"] != "mcp__cc-approvals__request_permission" {
-		t.Errorf("permissionPromptTool not set: %v", got["permissionPromptTool"])
-	}
-	servers, ok := got["mcpServers"].(map[string]interface{})
+
+	hooks, ok := got["hooks"].(map[string]interface{})
 	if !ok {
-		t.Fatal("mcpServers not a map")
+		t.Fatal("hooks not a map")
 	}
-	if _, exists := servers["cc-approvals"]; !exists {
-		t.Error("cc-approvals not in mcpServers")
+	prHooks, ok := hooks["PermissionRequest"].([]interface{})
+	if !ok || len(prHooks) == 0 {
+		t.Fatal("PermissionRequest hooks not set")
 	}
-	if got["theme"] != "dark" {
-		t.Error("existing keys should be preserved")
+	entry := prHooks[0].(map[string]interface{})
+	innerHooks, ok := entry["hooks"].([]interface{})
+	if !ok || len(innerHooks) == 0 {
+		t.Fatal("inner hooks array missing")
 	}
-}
-
-func TestDisableRemovesKeys(t *testing.T) {
-	path := writeTempSettings(t, `{
-        "theme": "dark",
-        "permissionPromptTool": "mcp__cc-approvals__request_permission",
-        "mcpServers": {"cc-approvals": {"type": "sse", "url": "http://localhost:9753/mcp"}}
-    }`)
-	if err := settings.Disable(path); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	cmd := innerHooks[0].(map[string]interface{})
+	if cmd["type"] != "command" {
+		t.Errorf("expected type=command, got %v", cmd["type"])
 	}
-	got := readJSON(t, path)
-	if _, exists := got["permissionPromptTool"]; exists {
-		t.Error("permissionPromptTool should have been removed")
-	}
-	if _, exists := got["mcpServers"]; exists {
-		t.Error("mcpServers should have been removed when cc-approvals was the only entry")
+	if cmd["command"] != "/usr/local/bin/claude-code-approvals hook" {
+		t.Errorf("unexpected command: %v", cmd["command"])
 	}
 	if got["theme"] != "dark" {
 		t.Error("existing keys should be preserved")
 	}
 }
 
-func TestDisableKeepsOtherMCPServers(t *testing.T) {
-	path := writeTempSettings(t, `{
-        "mcpServers": {
-            "cc-approvals": {"type": "sse"},
-            "other-server": {"type": "stdio"}
-        },
-        "permissionPromptTool": "mcp__cc-approvals__request_permission"
-    }`)
-	if err := settings.Disable(path); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	got := readJSON(t, path)
-	servers := got["mcpServers"].(map[string]interface{})
-	if _, exists := servers["cc-approvals"]; exists {
-		t.Error("cc-approvals should be removed")
-	}
-	if _, exists := servers["other-server"]; !exists {
-		t.Error("other-server should be preserved")
-	}
-}
-
-func TestMalformedJSONAborts(t *testing.T) {
-	path := writeTempSettings(t, `{bad json}`)
-	err := settings.Enable(path, 9753)
-	if err == nil {
-		t.Error("expected error for malformed JSON")
-	}
-	// Original file should be untouched
-	data, _ := os.ReadFile(path)
-	if string(data) != `{bad json}` {
-		t.Error("original file should not be modified on error")
-	}
-}
-
-func TestEnableCreatesFileIfMissing(t *testing.T) {
+func TestInstallCreatesFileIfMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
-	if err := settings.Enable(path, 9753); err != nil {
+	if err := settings.Install(path, "/bin/cca"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("settings.json should be created")
+	}
+}
+
+func TestInstallIsIdempotent(t *testing.T) {
+	path := writeTempSettings(t, `{}`)
+	if err := settings.Install(path, "/bin/cca"); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+	if err := settings.Install(path, "/bin/cca"); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+	got := readJSON(t, path)
+	hooks := got["hooks"].(map[string]interface{})
+	prHooks := hooks["PermissionRequest"].([]interface{})
+	if len(prHooks) != 1 {
+		t.Errorf("expected exactly 1 entry, got %d", len(prHooks))
+	}
+}
+
+func TestUninstallRemovesHookEntry(t *testing.T) {
+	path := writeTempSettings(t, `{
+		"theme": "dark",
+		"hooks": {
+			"PermissionRequest": [{"hooks":[{"type":"command","command":"/bin/cca hook"}]}]
+		}
+	}`)
+	if err := settings.Uninstall(path); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := readJSON(t, path)
+	if _, exists := got["hooks"]; exists {
+		t.Error("hooks key should be removed when empty")
+	}
+	if got["theme"] != "dark" {
+		t.Error("existing keys should be preserved")
+	}
+}
+
+func TestUninstallKeepsOtherHooks(t *testing.T) {
+	path := writeTempSettings(t, `{
+		"hooks": {
+			"PermissionRequest": [{"hooks":[{"type":"command","command":"/bin/cca hook"}]}],
+			"PreToolUse": [{"hooks":[{"type":"command","command":"/other/hook"}]}]
+		}
+	}`)
+	if err := settings.Uninstall(path); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := readJSON(t, path)
+	hooks, ok := got["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatal("hooks key should still exist")
+	}
+	if _, exists := hooks["PermissionRequest"]; exists {
+		t.Error("PermissionRequest should be removed")
+	}
+	if _, exists := hooks["PreToolUse"]; !exists {
+		t.Error("PreToolUse should be preserved")
+	}
+}
+
+func TestUninstallNoOpIfFileMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := settings.Uninstall(path); err != nil {
+		t.Errorf("expected no error for missing file, got: %v", err)
+	}
+}
+
+func TestMalformedJSONAbortsInstall(t *testing.T) {
+	path := writeTempSettings(t, `{bad json}`)
+	err := settings.Install(path, "/bin/cca")
+	if err == nil {
+		t.Error("expected error for malformed JSON")
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != `{bad json}` {
+		t.Error("original file should not be modified on error")
 	}
 }

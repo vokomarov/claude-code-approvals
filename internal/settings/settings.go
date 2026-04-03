@@ -8,17 +8,15 @@ import (
 )
 
 const (
-	permissionPromptToolKey   = "permissionPromptTool"
-	permissionPromptToolValue = "mcp__cc-approvals__request_permission"
-	mcpServersKey             = "mcpServers"
-	serverName                = "cc-approvals"
+	hooksKey             = "hooks"
+	permissionRequestKey = "PermissionRequest"
 )
 
-// Enable injects the cc-approvals MCP server and permissionPromptTool into settings.json.
-// The port parameter specifies the SSE server's listening port and is embedded in the
-// MCP server URL (e.g. http://localhost:9753/mcp).
+// Install writes the PermissionRequest hook entry into settings.json.
+// binaryPath is the absolute path to the claude-code-approvals binary.
 // Creates the file if it does not exist. Atomic write via temp file + rename.
-func Enable(path string, port int) error {
+// Existing settings.json keys are preserved.
+func Install(path, binaryPath string) error {
 	data, err := readOrEmpty(path)
 	if err != nil {
 		return err
@@ -33,27 +31,34 @@ func Enable(path string, port int) error {
 		}
 	}
 
-	// Inject mcpServers.cc-approvals
-	servers, _ := m[mcpServersKey].(map[string]interface{})
-	if servers == nil {
-		servers = make(map[string]interface{})
+	hookEntry := []interface{}{
+		map[string]interface{}{
+			"hooks": []interface{}{
+				map[string]interface{}{
+					"type":    "command",
+					"command": binaryPath + " hook",
+				},
+			},
+		},
 	}
-	servers[serverName] = map[string]interface{}{
-		"type": "sse",
-		"url":  fmt.Sprintf("http://localhost:%d/mcp", port),
+
+	hooks, _ := m[hooksKey].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
 	}
-	m[mcpServersKey] = servers
-	m[permissionPromptToolKey] = permissionPromptToolValue
+	hooks[permissionRequestKey] = hookEntry
+	m[hooksKey] = hooks
 
 	return writeAtomic(path, m)
 }
 
-// Disable removes the cc-approvals MCP server and permissionPromptTool from settings.json.
-func Disable(path string) error {
+// Uninstall removes the PermissionRequest hook entry from settings.json.
+// No-op if the file does not exist.
+func Uninstall(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // nothing to do
+			return nil
 		}
 		return err
 	}
@@ -63,12 +68,10 @@ func Disable(path string) error {
 		return fmt.Errorf("malformed settings.json: %w", err)
 	}
 
-	delete(m, permissionPromptToolKey)
-
-	if servers, ok := m[mcpServersKey].(map[string]interface{}); ok {
-		delete(servers, serverName)
-		if len(servers) == 0 {
-			delete(m, mcpServersKey)
+	if hooks, ok := m[hooksKey].(map[string]interface{}); ok {
+		delete(hooks, permissionRequestKey)
+		if len(hooks) == 0 {
+			delete(m, hooksKey)
 		}
 	}
 
