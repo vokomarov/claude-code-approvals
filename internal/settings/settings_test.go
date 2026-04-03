@@ -152,3 +152,15 @@ func TestMalformedJSONAbortsInstall(t *testing.T) {
 		t.Error("original file should not be modified on error")
 	}
 }
+
+func TestMalformedJSONAbortsUninstall(t *testing.T) {
+	path := writeTempSettings(t, `{bad json}`)
+	err := settings.Uninstall(path)
+	if err == nil {
+		t.Error("expected error for malformed JSON")
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != `{bad json}` {
+		t.Error("original file should not be modified on error")
+	}
+}

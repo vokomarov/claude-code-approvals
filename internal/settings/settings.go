@@ -2,6 +2,7 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +32,8 @@ func Install(path, binaryPath string) error {
 		}
 	}
 
+	// hookEntry has no "matcher" key, which means it applies to all tools unconditionally.
+	// This is intentional: cc-approvals intercepts every permission request.
 	hookEntry := []interface{}{
 		map[string]interface{}{
 			"hooks": []interface{}{
@@ -57,7 +60,7 @@ func Install(path, binaryPath string) error {
 func Uninstall(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
@@ -80,7 +83,7 @@ func Uninstall(path string) error {
 
 func readOrEmpty(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	return data, err
