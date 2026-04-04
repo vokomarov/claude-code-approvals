@@ -130,6 +130,10 @@ func runOn() {
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "error: daemon returned unexpected status %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
 	fmt.Println("Approval intercepting enabled.")
 }
 
@@ -143,6 +147,10 @@ func runOff() {
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "error: daemon returned unexpected status %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
 	fmt.Println("Approval intercepting disabled.")
 }
 
