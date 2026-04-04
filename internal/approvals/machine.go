@@ -16,14 +16,14 @@ type MachineOpts struct {
 	MacosSeconds    int    // 0 = skip macOS notification
 	TelegramSeconds int    // 0 = skip Telegram notification
 	TotalSeconds    int    // 0 = no hard ceiling (wait indefinitely); >0 = hard ceiling in seconds
-	TimeoutPolicy   string // "allow" | "deny" — only consulted when TotalSeconds > 0
+	TimeoutPolicy   string // "approve" | "deny" — only consulted when TotalSeconds > 0
 	OnMacos         func(*ApprovalRequest)
 	OnTelegram      func(*ApprovalRequest)
 }
 
 // RunMachine starts background goroutines for a request and returns immediately.
 //
-// Goroutines stop when req.Cancel() is called. The caller (MCP handler) is
+// Goroutines stop when req.Cancel() is called. The caller (daemon handler) is
 // responsible for calling req.Cancel() after reading req.Decision, which stops
 // any pending notification goroutines. The total-timeout goroutine is the only
 // goroutine within the machine that writes to req.Decision; notification callbacks
