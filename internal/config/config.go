@@ -47,9 +47,7 @@ type Config struct {
 }
 
 func DefaultPath() string {
-	// UserHomeDir rarely fails; fallback to relative path if it does
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "cc-approvals", "config.yaml")
+	return "config.yml"
 }
 
 func Load(path string) (*Config, error) {
@@ -83,9 +81,6 @@ func validate(cfg *Config) error {
 	if cfg.Telegram.ChatID == 0 {
 		return fmt.Errorf("telegram.chat_id is required")
 	}
-	if cfg.Timeouts.TimeoutPolicy != "deny" && cfg.Timeouts.TimeoutPolicy != "approve" {
-		return fmt.Errorf("timeouts.timeout_policy must be 'deny' or 'approve', got %q", cfg.Timeouts.TimeoutPolicy)
-	}
 	m := cfg.Timeouts.MacosNotificationSeconds
 	tg := cfg.Timeouts.TelegramNotificationSeconds
 	total := cfg.Timeouts.TotalTimeoutSeconds
@@ -95,12 +90,20 @@ func validate(cfg *Config) error {
 	if m > 0 && tg > 0 && tg < m+minTelegramBuffer {
 		return fmt.Errorf("telegram_notification_seconds (%d) must exceed macos_notification_seconds (%d) by at least 5", tg, m)
 	}
-	maxNotification := m
-	if tg > maxNotification {
-		maxNotification = tg
+	if total < 0 {
+		return fmt.Errorf("total_timeout_seconds must be >= 0")
 	}
-	if total <= 0 || (maxNotification > 0 && total <= maxNotification) {
-		return fmt.Errorf("total_timeout_seconds (%d) must be > 0 and greater than the largest notification timeout (%d)", total, maxNotification)
+	if total > 0 {
+		if cfg.Timeouts.TimeoutPolicy != "deny" && cfg.Timeouts.TimeoutPolicy != "approve" {
+			return fmt.Errorf("timeouts.timeout_policy must be 'deny' or 'approve', got %q", cfg.Timeouts.TimeoutPolicy)
+		}
+		maxNotification := m
+		if tg > maxNotification {
+			maxNotification = tg
+		}
+		if maxNotification > 0 && total <= maxNotification {
+			return fmt.Errorf("total_timeout_seconds (%d) must be greater than the largest notification timeout (%d)", total, maxNotification)
+		}
 	}
 	if cfg.Daemon.Port < 1 || cfg.Daemon.Port > 65535 {
 		return fmt.Errorf("daemon.port must be between 1 and 65535")

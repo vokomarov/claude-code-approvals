@@ -138,6 +138,90 @@ func TestLoadMalformedYAML(t *testing.T) {
 	}
 }
 
+func TestValidateTotalZeroIsValid(t *testing.T) {
+	path := writeTempConfig(t, `
+telegram:
+  bot_token: "tok"
+  chat_id: 1
+timeouts:
+  macos_notification_seconds: 0
+  telegram_notification_seconds: 0
+  total_timeout_seconds: 0
+  timeout_policy: ""
+daemon:
+  port: 9753
+paths:
+  claude_settings: "/tmp/settings.json"
+`)
+	_, err := config.Load(path)
+	if err != nil {
+		t.Errorf("expected no error for total=0, got: %v", err)
+	}
+}
+
+func TestValidateTotalZeroWithNotificationsIsValid(t *testing.T) {
+	path := writeTempConfig(t, `
+telegram:
+  bot_token: "tok"
+  chat_id: 1
+timeouts:
+  macos_notification_seconds: 15
+  telegram_notification_seconds: 30
+  total_timeout_seconds: 0
+  timeout_policy: ""
+daemon:
+  port: 9753
+paths:
+  claude_settings: "/tmp/settings.json"
+`)
+	_, err := config.Load(path)
+	if err != nil {
+		t.Errorf("expected no error for total=0 with notifications, got: %v", err)
+	}
+}
+
+func TestValidateTotalPositiveStillRequiresPolicy(t *testing.T) {
+	path := writeTempConfig(t, `
+telegram:
+  bot_token: "tok"
+  chat_id: 1
+timeouts:
+  macos_notification_seconds: 0
+  telegram_notification_seconds: 0
+  total_timeout_seconds: 60
+  timeout_policy: ""
+daemon:
+  port: 9753
+paths:
+  claude_settings: "/tmp/settings.json"
+`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Error("expected error when total>0 and timeout_policy is empty")
+	}
+}
+
+func TestValidateTotalPositiveStillRequiresExceedNotification(t *testing.T) {
+	path := writeTempConfig(t, `
+telegram:
+  bot_token: "tok"
+  chat_id: 1
+timeouts:
+  macos_notification_seconds: 15
+  telegram_notification_seconds: 30
+  total_timeout_seconds: 20
+  timeout_policy: deny
+daemon:
+  port: 9753
+paths:
+  claude_settings: "/tmp/settings.json"
+`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Error("expected error when total <= max notification timeout")
+	}
+}
+
 func TestValidationMissingClaudeSettings(t *testing.T) {
 	path := writeTempConfig(t, `
 telegram:
