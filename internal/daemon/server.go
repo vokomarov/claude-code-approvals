@@ -69,7 +69,7 @@ func New(cfg *config.Config) (*Server, error) {
 func (s *Server) handler(ctx context.Context) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"ok"}`)
 	})
@@ -121,6 +121,7 @@ func (s *Server) handler(ctx context.Context) http.Handler {
 				message := notifier.TruncateForMacOS(ar.ToolInput)
 				timeoutSecs := s.cfg.Timeouts.TelegramNotificationSeconds - s.cfg.Timeouts.MacosNotificationSeconds
 				if timeoutSecs <= 0 {
+					slog.Warn("timeoutSecs for macOS notification is <= 0, defaulting to 30s")
 					timeoutSecs = 30
 				}
 				go func() {
