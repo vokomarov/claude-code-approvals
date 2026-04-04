@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/vokomarov/claude-code-approvals/internal/config"
@@ -118,8 +119,9 @@ paths:
 
 func TestDefaultConfigPath(t *testing.T) {
 	path := config.DefaultPath()
-	if path == "" {
-		t.Error("expected non-empty default path")
+	want := filepath.Join(".config", "cc-approvals", "config.yaml")
+	if !strings.HasSuffix(path, want) {
+		t.Errorf("expected path ending in %q, got %q", want, path)
 	}
 }
 
