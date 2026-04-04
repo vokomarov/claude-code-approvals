@@ -7,16 +7,20 @@ When Claude Code asks for permission to run a command, this tool can:
 2. Send a **Telegram message** with inline buttons if the notification goes unanswered (at t=30s)
 3. Auto-apply a policy (`deny` or `approve`) after a hard timeout
 
-Toggle the whole system on or off with a single command — no Claude Code restart required beyond the session boundary.
+Toggle the whole system on or off with a single command — no Claude Code restart required.
 
 ---
 
 ## How it works
 
 ```
-Claude Code (PHPStorm / any IDE)
+Claude Code (per permission request)
     │
-    │  MCP over SSE  (when cc-approvals is enabled)
+    │  spawns: claude-code-approvals hook
+    ▼
+hook process  (reads stdin JSON, POSTs to daemon)
+    │
+    │  POST /api/permission  (blocking)
     ▼
 claude-code-approvals daemon  (localhost:9753)
     │
@@ -27,7 +31,7 @@ claude-code-approvals daemon  (localhost:9753)
                     [✅ Approve] [❌ Deny]
 ```
 
-The daemon runs as a launchd service and exposes an MCP server that Claude Code connects to as its `permissionPromptTool`. Each permission request blocks until a decision arrives from any channel — the first response wins.
+The daemon runs as a launchd service. Claude Code invokes the `hook` subcommand as a subprocess for each permission request; the hook blocks until the daemon returns a decision. When the daemon is disabled (`cc off`), it returns immediately and Claude Code falls back to its built-in interactive prompt.
 
 ---
 
@@ -88,13 +92,13 @@ make health
 # → {"status":"ok"}
 ```
 
-### 4. Add the MCP server to Claude Code settings
+### 4. Register the hook in Claude Code settings (one-time)
 
 ```bash
-claude-code-approvals on
+claude-code-approvals install
 ```
 
-This injects the MCP server entry and `permissionPromptTool` into your Claude Code `settings.json`. Start a new Claude Code session to activate.
+This writes the `PermissionRequest` hook entry to your Claude Code `settings.json`. You only need to do this once — it persists across daemon restarts and session restarts.
 
 ---
 
@@ -113,8 +117,8 @@ This injects the MCP server entry and `permissionPromptTool` into your Claude Co
 ## Daily usage
 
 ```bash
-claude-code-approvals on    # enable — then start a new Claude Code session
-claude-code-approvals off   # disable — then start a new Claude Code session
+claude-code-approvals on    # enable interception (no session restart needed)
+claude-code-approvals off   # disable — Claude Code uses its built-in prompt
 ```
 
 | Situation | Command |
@@ -143,8 +147,8 @@ make reinstall   # rebuild, update plist, restart daemon, health check
 | `timeouts.timeout_policy` | `deny` | Decision on hard timeout: `deny` or `approve` |
 | `macos.phpstorm_bundle_id` | `com.jetbrains.phpstorm` | App focused on notification body click |
 | `telegram.message_template` | (built-in) | Go `text/template`; vars: `.SessionID` `.ToolName` `.ToolInput` `.CreatedAt` |
-| `paths.claude_settings` | — | Path to Claude Code `settings.json` modified by `on`/`off` |
-| `daemon.port` | `9753` | Port for MCP SSE server and health endpoint |
+| `paths.claude_settings` | — | Path to Claude Code `settings.json` modified by `install`/`uninstall` |
+| `daemon.port` | `9753` | Port for HTTP API and health endpoint |
 
 **Validation rules:**
 - If both notification timeouts are non-zero, `telegram_notification_seconds` must exceed `macos_notification_seconds` by at least 5
@@ -165,21 +169,26 @@ timeouts:
 
 ## Claude Code settings
 
-When `claude-code-approvals on` is active, your `settings.json` contains:
+After `claude-code-approvals install`, your `settings.json` contains:
 
 ```json
 {
-  "mcpServers": {
-    "cc-approvals": {
-      "type": "sse",
-      "url": "http://localhost:9753/mcp"
-    }
-  },
-  "permissionPromptTool": "mcp__cc-approvals__request_permission"
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/you/go/bin/claude-code-approvals hook"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-`claude-code-approvals off` removes both keys atomically.
+`claude-code-approvals uninstall` removes this entry. The `on`/`off` commands do not modify `settings.json` — they toggle the daemon's state via HTTP.
 
 ---
 
