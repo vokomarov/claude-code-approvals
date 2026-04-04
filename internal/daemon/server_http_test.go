@@ -121,6 +121,56 @@ func TestPermissionBlocksUntilDecision(t *testing.T) {
 	}
 }
 
+// TestShutdownAlwaysDeniesPendingRequests verifies that shutdown() sends
+// Decision{Value:"deny"} to all pending requests regardless of timeout_policy.
+func TestShutdownAlwaysDeniesPendingRequests(t *testing.T) {
+	// Use timeout_policy "approve" to confirm shutdown overrides it with "deny".
+	cfg := testConfig(t)
+	cfg.Timeouts.TimeoutPolicy = "approve"
+
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wire up a real httptest server so srv.httpServer.Shutdown won't panic.
+	ts := httptest.NewServer(srv.handler(context.Background()))
+	defer ts.Close()
+	srv.httpServer = ts.Config
+
+	// Add a pending request directly to the store.
+	req := approvals.NewRequest("sess-shutdown", "Bash", `{"command":"ls"}`)
+	srv.store.Add(req)
+
+	// Run shutdown in a goroutine; it should complete promptly.
+	done := make(chan struct{})
+	go func() {
+		srv.shutdown()
+		close(done)
+	}()
+
+	// Collect the decision sent by shutdown.
+	var got approvals.Decision
+	select {
+	case got = <-req.Decision:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for shutdown decision")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("shutdown did not complete in time")
+	}
+
+	if got.Value != "deny" {
+		t.Errorf("expected deny, got %q", got.Value)
+	}
+	if got.Source != "timeout" {
+		t.Errorf("expected source=timeout, got %q", got.Source)
+	}
+}
+
 func TestEnableDisableToggle(t *testing.T) {
 	srv, err := New(testConfig(t))
 	if err != nil {

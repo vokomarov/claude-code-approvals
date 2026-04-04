@@ -201,7 +201,7 @@ func (s *Server) shutdown() {
 	pending := s.store.All()
 	for _, req := range pending {
 		select {
-		case req.Decision <- approvals.Decision{Value: s.cfg.Timeouts.TimeoutPolicy, Source: "timeout"}:
+		case req.Decision <- approvals.Decision{Value: "deny", Source: "timeout"}:
 		default:
 		}
 		req.Cancel()
