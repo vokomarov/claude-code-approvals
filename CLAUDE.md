@@ -127,8 +127,9 @@ signal → ctx.Done()
 
 Config lives at `~/.config/cc-approvals/config.yaml`. Key validated constraints:
 - `telegram_notification_seconds` must exceed `macos_notification_seconds` by ≥ 5
-- `total_timeout_seconds` must exceed the largest notification timeout
-- `timeout_policy` must be `deny` or `approve`
+- `total_timeout_seconds: 0` means wait indefinitely; any positive value is a hard ceiling and must exceed the largest notification timeout
+- `timeout_policy` must be `deny` or `approve` when `total_timeout_seconds > 0`; ignored when total is zero
+- On daemon shutdown, all pending requests are always denied regardless of `timeout_policy`
 
 Set either notification timeout to `0` to skip that channel entirely.
 
