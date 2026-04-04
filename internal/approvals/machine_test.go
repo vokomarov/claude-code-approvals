@@ -117,6 +117,28 @@ func TestMachineMacosSkippedWhenZero(t *testing.T) {
 	}
 }
 
+func TestMachineNoTotalTimeoutWaitsIndefinitely(t *testing.T) {
+	req := approvals.NewRequest("s", "Bash", "{}")
+
+	approvals.RunMachine(req, approvals.MachineOpts{
+		MacosSeconds:    0,
+		TelegramSeconds: 0,
+		TotalSeconds:    0, // infinite — no goroutine should fire a decision
+		TimeoutPolicy:   "",
+		OnMacos:         func(r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+	})
+
+	// After 200ms, no decision should have been produced automatically.
+	select {
+	case d := <-req.Decision:
+		t.Errorf("expected no decision, got %+v", d)
+	case <-time.After(200 * time.Millisecond):
+		// success: machine is waiting indefinitely
+	}
+	req.Cancel()
+}
+
 func TestMachineFirstWriteWins(t *testing.T) {
 	req := approvals.NewRequest("s", "Bash", "{}")
 

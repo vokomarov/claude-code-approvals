@@ -11,12 +11,12 @@ import (
 // times. They are responsible for sending the external notification (e.g. spawning
 // terminal-notifier or sending a Telegram message) and writing the result to
 // req.Decision. They must NOT call req.Cancel() themselves — context cleanup is
-// the consumer's responsibility (typically the MCP handler after reading Decision).
+// the consumer's responsibility (typically the daemon handler after reading Decision).
 type MachineOpts struct {
 	MacosSeconds    int    // 0 = skip macOS notification
 	TelegramSeconds int    // 0 = skip Telegram notification
-	TotalSeconds    int    // hard ceiling; always runs
-	TimeoutPolicy   string // "allow" | "deny" — applied when total timeout fires
+	TotalSeconds    int    // 0 = no hard ceiling (wait indefinitely); >0 = hard ceiling in seconds
+	TimeoutPolicy   string // "allow" | "deny" — only consulted when TotalSeconds > 0
 	OnMacos         func(*ApprovalRequest)
 	OnTelegram      func(*ApprovalRequest)
 }
@@ -58,19 +58,23 @@ func RunMachine(req *ApprovalRequest, opts MachineOpts) {
 		startTimer(opts.TelegramSeconds, opts.OnTelegram)
 	}
 
-	// Total timeout: always runs, writes to Decision channel directly.
-	go func() {
-		t := time.NewTimer(time.Duration(opts.TotalSeconds) * time.Second)
-		defer t.Stop()
-		select {
-		case <-t.C:
-			// Non-blocking send: if already decided, this is a no-op.
+	// Total timeout: only runs when TotalSeconds > 0. When zero, the request
+	// waits indefinitely until a notification callback writes to Decision or
+	// the daemon shuts down.
+	if opts.TotalSeconds > 0 {
+		go func() {
+			t := time.NewTimer(time.Duration(opts.TotalSeconds) * time.Second)
+			defer t.Stop()
 			select {
-			case req.Decision <- Decision{Value: opts.TimeoutPolicy, Source: "timeout"}:
-			default:
+			case <-t.C:
+				// Non-blocking send: if already decided, this is a no-op.
+				select {
+				case req.Decision <- Decision{Value: opts.TimeoutPolicy, Source: "timeout"}:
+				default:
+				}
+				cancel()
+			case <-ctx.Done():
 			}
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+		}()
+	}
 }
