@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-`cc-approvals` is a macOS daemon that intercepts Claude Code permission prompts and routes them to the user via macOS native notifications (`terminal-notifier`) and/or Telegram inline-button messages. It exposes an MCP (Model Context Protocol) server over HTTP SSE that Claude Code connects to as a `permissionPromptTool`.
+`cc-approvals` is a macOS daemon that intercepts Claude Code permission prompts and routes them to the user via macOS native notifications (`terminal-notifier`) and/or Telegram inline-button messages. Claude Code invokes the `hook` subcommand as a subprocess per permission request; the hook POSTs to the daemon's HTTP API and returns the decision as `hookSpecificOutput` JSON.
 
 ## Commands
 
@@ -32,8 +32,11 @@ go vet ./...
 
 ```bash
 claude-code-approvals daemon    # start the approval daemon (normally run by launchd)
-claude-code-approvals on        # inject permissionPromptTool into Claude Code settings.json
-claude-code-approvals off       # remove permissionPromptTool from Claude Code settings.json
+claude-code-approvals install   # one-time: register PermissionRequest hook in settings.json
+claude-code-approvals uninstall # remove hook from settings.json
+claude-code-approvals on        # enable approval intercepting (daemon must be running)
+claude-code-approvals off       # disable approval intercepting (daemon stays running)
+claude-code-approvals hook      # run as PermissionRequest hook subprocess (invoked by Claude Code)
 ```
 
 ### launchd service
@@ -49,14 +52,20 @@ curl -s http://localhost:9753/health   # verify
 ### Request lifecycle
 
 ```
-Claude Code
+Claude Code  (per permission request)
     │
-    │  POST /mcp  (SSE)
+    │  spawns: claude-code-approvals hook
+    ▼
+hook process
+    │  reads stdin JSON (tool_name, tool_input, session_id, cwd)
+    │  POST /api/permission  (blocking HTTP)
     ▼
 daemon/Server  ──────────────────────────────────────────────────────────┐
-    │  mcp.HandlePermissionRequest(sessionID, toolName, toolInput)       │
-    ▼                                                                    │
-approvals.Store.Add(req)                                                 │
+    │  checks enabled flag (atomic.Bool)                                 │
+    │  disabled → 204 No Content → hook exits silently → Claude Code     │
+    │            uses built-in interactive prompt                        │
+    │                                                                    │
+    │  enabled → approvals.Store.Add(req)                                │
     │                                                                    │
     ├─ approvals.RunMachine(req, opts)  ──────────────────────────────┐  │
     │       │                                                         │  │
@@ -82,7 +91,7 @@ store.Delete(req.ID)                                                     │
     └────────────────────────────────────────────────────────────────────┘
     │
     ▼
-{"decision":"allow"} or {"decision":"deny"}  →  Claude Code proceeds/blocks
+hook writes hookSpecificOutput JSON to stdout → Claude Code proceeds/blocks
 ```
 
 **Shutdown path** (`cc daemon` receives SIGTERM/SIGINT):
@@ -91,26 +100,26 @@ store.Delete(req.ID)                                                     │
 signal → ctx.Done()
     └─ Server.shutdown()
             ├─ store.All() → send TimeoutPolicy to each req.Decision
-            └─ httpServer.Shutdown(5s) → flush in-flight SSE responses
+            └─ httpServer.Shutdown(5s) → flush in-flight responses
 ```
 
 ### Package responsibilities
 
 | Package | Responsibility |
 |---|---|
-| `cmd/cc` | CLI entry point; `daemon`, `on`, `off` sub-commands |
-| `internal/daemon` | Wires config → store → bot → MCP server → HTTP mux; manages graceful shutdown |
+| `cmd/claude-code-approvals` | CLI entry point; `daemon`, `install`, `uninstall`, `on`, `off`, `hook` sub-commands |
+| `internal/daemon` | HTTP server with `atomic.Bool` enabled flag; `/api/permission` (blocking), `/api/enable`, `/api/disable`; graceful shutdown |
+| `internal/hook` | Hook subprocess: reads stdin JSON, POSTs to daemon, writes `hookSpecificOutput` to stdout on allow/deny; silent on 204 or error |
 | `internal/approvals` | `ApprovalRequest` type, `Store` (in-memory, mutex-guarded), `RunMachine` state machine |
-| `internal/mcp` | `HandlePermissionRequest` — the blocking bridge between MCP tool call and the state machine |
 | `internal/config` | YAML config load + validation; default path `~/.config/cc-approvals/config.yaml` |
-| `internal/settings` | Read/write Claude Code `settings.json`; injects/removes `permissionPromptTool` key |
+| `internal/settings` | `Install(path, binaryPath)` writes `hooks.PermissionRequest` entry; `Uninstall(path)` removes it; atomic write via temp file + rename |
 | `internal/notifier` | Wraps `terminal-notifier` CLI; `Notify` blocks until user clicks or timeout |
 | `internal/telegram` | Long-poll bot loop; sends approval messages and handles inline-button callbacks |
 
 ### Concurrency model
 
 - `req.Decision` is a **buffered channel of size 1**. The first write wins; all others are no-ops via `select { … default: }`.
-- `req.Cancel` is a `context.CancelFunc` that stops all machine goroutines. It is called by the MCP handler (not by notification callbacks).
+- `req.Cancel` is a `context.CancelFunc` that stops all machine goroutines. Called by the `/api/permission` HTTP handler after decision, not by notification callbacks.
 - Telegram bot runs `PollForever` in a single goroutine; it writes decisions to `req.Decision` by looking up requests in `Store`.
 - Graceful shutdown (`Server.shutdown`) iterates all pending requests and sends the configured `timeout_policy` decision before calling `httpServer.Shutdown`.
 
@@ -123,24 +132,21 @@ Config lives at `~/.config/cc-approvals/config.yaml`. Key validated constraints:
 
 Set either notification timeout to `0` to skip that channel entirely.
 
-### MCP integration
+### Hook integration
 
-The daemon registers as an MCP server at `http://localhost:<port>/mcp`. Claude Code's `settings.json` must contain:
+`cc install` writes a `PermissionRequest` hook entry to Claude Code's `settings.json` (one-time setup). Claude Code then spawns `claude-code-approvals hook` for every permission request. `cc on`/`cc off` toggle the daemon's `atomic.Bool` enabled flag via HTTP without touching `settings.json` or requiring a session restart.
 
-```json
-"permissionPromptTool": "mcp__cc-approvals__request_permission"
-```
-
-`cc on` / `cc off` inject or remove this key automatically.
+When disabled, the hook receives 204 and exits silently — Claude Code falls back to its built-in interactive prompt.
 
 ## Environment notes
 
-- Config lives at `./config.yml` (gitignored) — copy from `config.example.yaml` and fill in Telegram credentials before starting the daemon
+- Config lives at `~/.config/cc-approvals/config.yaml` (gitignored) — copy from `config.example.yaml` and fill in Telegram credentials before starting the daemon
 - `~/go/bin` must be in `PATH`; macOS ships `/usr/bin/cc` (clang) which shadows Go binaries
-- `mcp-go`: use `req.GetArguments()` to access tool arguments — `req.Params.Arguments` is typed `any` in v0.45.0+
+- `permissionPromptTool` settings.json key is undocumented and **does not work** in Claude Code IDE sessions — use the `PermissionRequest` hook instead
 
-## Known Gaps (spec vs. implementation)
+## Known Gaps
 
-- `ApprovalRequest.ProjectPath` — field defined in `types.go`, never populated; spec says it should be the daemon CWD
-- `telegram.bot_token` and `chat_id` are required by config validation even when `telegram_notification_seconds = 0` — intentional per spec
-- `docs/plans/` is historical (all tasks complete); `docs/specs/` is the authoritative design reference
+- `ApprovalRequest.ProjectPath` — field defined in `types.go`, never populated
+- `telegram.bot_token` and `chat_id` required by config validation even when `telegram_notification_seconds = 0` — intentional
+- `OnMacos` goroutine outlives its `ApprovalRequest` — the `notifier.Notify` subprocess runs until the macOS notification times out even after the request is decided; harmless due to `select { default: }` guard
+- Design spec: `docs/superpowers/specs/2026-04-03-permission-hook-redesign.md`
