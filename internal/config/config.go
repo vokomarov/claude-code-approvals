@@ -47,7 +47,8 @@ type Config struct {
 }
 
 func DefaultPath() string {
-	return "config.yml"
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "cc-approvals", "config.yaml")
 }
 
 func Load(path string) (*Config, error) {
