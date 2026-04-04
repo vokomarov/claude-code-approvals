@@ -12,6 +12,7 @@ import (
 
 	"github.com/vokomarov/claude-code-approvals/internal/config"
 	"github.com/vokomarov/claude-code-approvals/internal/daemon"
+	"github.com/vokomarov/claude-code-approvals/internal/hook"
 	"github.com/vokomarov/claude-code-approvals/internal/settings"
 )
 
@@ -24,10 +25,16 @@ func main() {
 	switch os.Args[1] {
 	case "daemon":
 		runDaemon()
+	case "install":
+		runInstall()
+	case "uninstall":
+		runUninstall()
 	case "on":
 		runOn()
 	case "off":
 		runOff()
+	case "hook":
+		hook.Run()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %q\n", os.Args[1])
 		printUsage()
@@ -37,9 +44,12 @@ func main() {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: claude-code-approvals <command>")
-	fmt.Fprintln(os.Stderr, "  daemon  Start the approval daemon (used by launchd)")
-	fmt.Fprintln(os.Stderr, "  on      Enable notifications (modifies Claude Code settings)")
-	fmt.Fprintln(os.Stderr, "  off     Disable notifications (modifies Claude Code settings)")
+	fmt.Fprintln(os.Stderr, "  daemon     Start the approval daemon (used by launchd)")
+	fmt.Fprintln(os.Stderr, "  install    One-time: register hook in Claude Code settings.json")
+	fmt.Fprintln(os.Stderr, "  uninstall  Remove hook from Claude Code settings.json")
+	fmt.Fprintln(os.Stderr, "  on         Enable approval intercepting (daemon must be running)")
+	fmt.Fprintln(os.Stderr, "  off        Disable approval intercepting (daemon stays running)")
+	fmt.Fprintln(os.Stderr, "  hook       Run as Claude Code PermissionRequest hook (invoked by Claude Code)")
 }
 
 func runDaemon() {
@@ -67,7 +77,7 @@ func runDaemon() {
 	}
 }
 
-func runOn() {
+func runInstall() {
 	cfgPath := config.DefaultPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -75,48 +85,72 @@ func runOn() {
 		os.Exit(1)
 	}
 
-	// Check daemon is running
-	if !isDaemonHealthy(cfg.Daemon.Port) {
-		fmt.Fprintf(os.Stderr, "warning: daemon does not appear to be running on port %d\n", cfg.Daemon.Port)
-		fmt.Fprintf(os.Stderr, "         start it with: launchctl start com.vokomarov.cc-approvals\n")
+	binaryPath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error resolving binary path: %v\n", err)
+		os.Exit(1)
 	}
 
 	settingsPath := cfg.Paths.ClaudeSettings
-	if err := settings.Enable(settingsPath, cfg.Daemon.Port); err != nil {
+	if err := settings.Install(settingsPath, binaryPath); err != nil {
 		fmt.Fprintf(os.Stderr, "error updating settings: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ Notifications enabled.")
+	fmt.Println("Hook installed.")
 	fmt.Printf("   Settings updated: %s\n", settingsPath)
-	fmt.Println("   Restart your Claude Code session in PHPStorm to apply.")
+	fmt.Println("   This is a one-time setup — run 'on'/'off' to toggle without restarting Claude Code.")
+}
+
+func runUninstall() {
+	cfgPath := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	settingsPath := cfg.Paths.ClaudeSettings
+	if err := settings.Uninstall(settingsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "error updating settings: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Hook uninstalled.")
+	fmt.Printf("   Settings updated: %s\n", settingsPath)
+}
+
+func runOn() {
+	port := loadPort()
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/api/enable", port), "", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: daemon not reachable at localhost:%d\n", port)
+		fmt.Fprintf(os.Stderr, "       start it with: launchctl start com.vokomarov.cc-approvals\n")
+		os.Exit(1)
+	}
+	_ = resp.Body.Close()
+	fmt.Println("Approval intercepting enabled.")
 }
 
 func runOff() {
-	cfgPath := config.DefaultPath()
-	cfg, err := config.Load(cfgPath)
+	port := loadPort()
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/api/disable", port), "", nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: daemon not reachable at localhost:%d\n", port)
+		fmt.Fprintf(os.Stderr, "       start it with: launchctl start com.vokomarov.cc-approvals\n")
 		os.Exit(1)
 	}
-
-	settingsPath := cfg.Paths.ClaudeSettings
-	if err := settings.Disable(settingsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "error updating settings: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("✅ Notifications disabled.")
-	fmt.Printf("   Settings updated: %s\n", settingsPath)
-	fmt.Println("   Restart your Claude Code session in PHPStorm to apply.")
+	_ = resp.Body.Close()
+	fmt.Println("Approval intercepting disabled.")
 }
 
-func isDaemonHealthy(port int) bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/health", port))
+// loadPort returns the daemon port from config, or the default 9753 on error.
+func loadPort() int {
+	cfg, err := config.Load(config.DefaultPath())
 	if err != nil {
-		return false
+		return 9753
 	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	return cfg.Daemon.Port
 }
