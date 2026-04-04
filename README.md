@@ -5,7 +5,7 @@ A macOS daemon that intercepts [Claude Code](https://claude.ai/code) permission 
 When Claude Code asks for permission to run a command, this tool can:
 1. Show a **macOS notification** with Approve / Deny buttons (at t=15s by default)
 2. Send a **Telegram message** with inline buttons if the notification goes unanswered (at t=30s)
-3. Auto-apply a policy (`deny` or `approve`) after a hard timeout
+3. Auto-apply a policy (`deny` or `approve`) after a hard timeout — or wait indefinitely if no timeout is set
 
 Toggle the whole system on or off with a single command — no Claude Code restart required.
 
@@ -143,8 +143,8 @@ make reinstall   # rebuild, update plist, restart daemon, health check
 |---|---|---|
 | `timeouts.macos_notification_seconds` | `15` | Delay before macOS notification. `0` = skip |
 | `timeouts.telegram_notification_seconds` | `30` | Delay before Telegram message. `0` = skip |
-| `timeouts.total_timeout_seconds` | `300` | Hard ceiling; applies `timeout_policy` after this |
-| `timeouts.timeout_policy` | `deny` | Decision on hard timeout: `deny` or `approve` |
+| `timeouts.total_timeout_seconds` | `300` | Hard ceiling in seconds; `0` = wait indefinitely (no timeout) |
+| `timeouts.timeout_policy` | `deny` | Decision on hard timeout: `deny` or `approve`. Only used when `total_timeout_seconds > 0` |
 | `macos.phpstorm_bundle_id` | `com.jetbrains.phpstorm` | App focused on notification body click |
 | `telegram.message_template` | (built-in) | Go `text/template`; vars: `.SessionID` `.ToolName` `.ToolInput` `.CreatedAt` |
 | `paths.claude_settings` | — | Path to Claude Code `settings.json` modified by `install`/`uninstall` |
@@ -152,7 +152,9 @@ make reinstall   # rebuild, update plist, restart daemon, health check
 
 **Validation rules:**
 - If both notification timeouts are non-zero, `telegram_notification_seconds` must exceed `macos_notification_seconds` by at least 5
-- `total_timeout_seconds` must exceed the largest non-zero notification timeout
+- `total_timeout_seconds: 0` means wait indefinitely; any positive value must exceed the largest non-zero notification timeout
+- `timeout_policy` is required only when `total_timeout_seconds > 0`
+- On daemon shutdown, all pending requests are always denied regardless of `timeout_policy`
 - `telegram.bot_token` and `chat_id` are always required
 
 **Timeout-only mode** (no notifications, auto-deny after 60s):
