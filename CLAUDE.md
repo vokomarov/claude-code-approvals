@@ -99,7 +99,7 @@ hook writes hookSpecificOutput JSON to stdout → Claude Code proceeds/blocks
 ```
 signal → ctx.Done()
     └─ Server.shutdown()
-            ├─ store.All() → send TimeoutPolicy to each req.Decision
+            ├─ store.All() → always send "deny" to each req.Decision
             └─ httpServer.Shutdown(5s) → flush in-flight responses
 ```
 
@@ -121,7 +121,7 @@ signal → ctx.Done()
 - `req.Decision` is a **buffered channel of size 1**. The first write wins; all others are no-ops via `select { … default: }`.
 - `req.Cancel` is a `context.CancelFunc` that stops all machine goroutines. Called by the `/api/permission` HTTP handler after decision, not by notification callbacks.
 - Telegram bot runs `PollForever` in a single goroutine; it writes decisions to `req.Decision` by looking up requests in `Store`.
-- Graceful shutdown (`Server.shutdown`) iterates all pending requests and sends the configured `timeout_policy` decision before calling `httpServer.Shutdown`.
+- Graceful shutdown (`Server.shutdown`) iterates all pending requests and always sends "deny" (regardless of `timeout_policy`) before calling `httpServer.Shutdown`.
 
 ### Configuration
 
