@@ -14,7 +14,7 @@ import (
 func TestRunWritesAllowDecision(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"decision":"allow"}`)
+		_, _ = fmt.Fprint(w, `{"decision":"allow"}`)
 	}))
 	defer ts.Close()
 
@@ -45,7 +45,7 @@ func TestRunWritesAllowDecision(t *testing.T) {
 func TestRunWritesDenyDecision(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"decision":"deny"}`)
+		_, _ = fmt.Fprint(w, `{"decision":"deny"}`)
 	}))
 	defer ts.Close()
 
@@ -54,7 +54,9 @@ func TestRunWritesDenyDecision(t *testing.T) {
 	run(in, &out, ts.URL, 5*time.Second)
 
 	var got map[string]interface{}
-	json.Unmarshal(out.Bytes(), &got)
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput: %s", err, out.String())
+	}
 	hso := got["hookSpecificOutput"].(map[string]interface{})
 	dec := hso["decision"].(map[string]interface{})
 	if dec["behavior"] != "deny" {
@@ -89,9 +91,9 @@ func TestRunSilentOn204(t *testing.T) {
 func TestRunForwardsFullStdinToDaemon(t *testing.T) {
 	var received bytes.Buffer
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.ReadFrom(r.Body)
+		_, _ = received.ReadFrom(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"decision":"allow"}`)
+		_, _ = fmt.Fprint(w, `{"decision":"allow"}`)
 	}))
 	defer ts.Close()
 
@@ -111,5 +113,14 @@ func TestRunForwardsFullStdinToDaemon(t *testing.T) {
 	}
 	if body["cwd"] != "/home/user" {
 		t.Errorf("cwd not forwarded: %v", body["cwd"])
+	}
+}
+
+func TestRunSilentOnInvalidStdin(t *testing.T) {
+	in := strings.NewReader(`{bad json}`)
+	var out bytes.Buffer
+	run(in, &out, "http://localhost:9753", 5*time.Second)
+	if out.Len() > 0 {
+		t.Errorf("expected no output on invalid stdin, got: %s", out.String())
 	}
 }

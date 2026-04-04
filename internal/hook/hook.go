@@ -27,6 +27,22 @@ type daemonResponse struct {
 	Decision string `json:"decision"`
 }
 
+// hookDecision represents the decision object in the hook output.
+type hookDecision struct {
+	Behavior string `json:"behavior"`
+}
+
+// hookSpecificOutput represents the hook-specific output structure.
+type hookSpecificOutput struct {
+	HookEventName string       `json:"hookEventName"`
+	Decision      hookDecision `json:"decision"`
+}
+
+// hookOutput represents the complete output structure sent back to Claude Code.
+type hookOutput struct {
+	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
+}
+
 // Run is the hook subcommand entrypoint. Reads from os.Stdin, writes to os.Stdout.
 // Always exits cleanly; errors result in no output, causing Claude Code to fall back
 // to its built-in interactive permission prompt.
@@ -57,7 +73,7 @@ func run(in io.Reader, out io.Writer, daemonBaseURL string, clientTimeout time.D
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return
@@ -68,22 +84,11 @@ func run(in io.Reader, out io.Writer, daemonBaseURL string, clientTimeout time.D
 		return
 	}
 
-	type decisionOutput struct {
-		Behavior string `json:"behavior"`
-	}
-	type hookSpecificOutput struct {
-		HookEventName string         `json:"hookEventName"`
-		Decision      decisionOutput `json:"decision"`
-	}
-	type result struct {
-		HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
-	}
-
-	output := result{
+	output := hookOutput{
 		HookSpecificOutput: hookSpecificOutput{
 			HookEventName: "PermissionRequest",
-			Decision:      decisionOutput{Behavior: dr.Decision},
+			Decision:      hookDecision{Behavior: dr.Decision},
 		},
 	}
-	json.NewEncoder(out).Encode(output)
+	_ = json.NewEncoder(out).Encode(output)
 }
