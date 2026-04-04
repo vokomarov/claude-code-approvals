@@ -121,7 +121,7 @@ func runUninstall() {
 }
 
 func runOn() {
-	port := loadPort()
+	port := daemonPort()
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/api/enable", port), "", nil)
 	if err != nil {
@@ -129,12 +129,12 @@ func runOn() {
 		fmt.Fprintf(os.Stderr, "       start it with: launchctl start com.vokomarov.cc-approvals\n")
 		os.Exit(1)
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
 	fmt.Println("Approval intercepting enabled.")
 }
 
 func runOff() {
-	port := loadPort()
+	port := daemonPort()
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/api/disable", port), "", nil)
 	if err != nil {
@@ -142,12 +142,12 @@ func runOff() {
 		fmt.Fprintf(os.Stderr, "       start it with: launchctl start com.vokomarov.cc-approvals\n")
 		os.Exit(1)
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
 	fmt.Println("Approval intercepting disabled.")
 }
 
-// loadPort returns the daemon port from config, or the default 9753 on error.
-func loadPort() int {
+// daemonPort returns the daemon port from config, or the default 9753 on error.
+func daemonPort() int {
 	cfg, err := config.Load(config.DefaultPath())
 	if err != nil {
 		return 9753
