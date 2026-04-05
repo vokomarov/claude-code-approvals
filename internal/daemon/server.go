@@ -44,7 +44,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	if cfg.Timeouts.MacosNotificationSeconds > 0 && !notifier.IsAvailable() {
-		slog.Warn("terminal-notifier not found; macOS notifications will be skipped")
+		slog.Warn("alerter not found; macOS notifications will be skipped")
 		cfg.Timeouts.MacosNotificationSeconds = 0
 	}
 
@@ -113,7 +113,7 @@ func (s *Server) handler(ctx context.Context) http.Handler {
 			TelegramSeconds: s.cfg.Timeouts.TelegramNotificationSeconds,
 			TotalSeconds:    s.cfg.Timeouts.TotalTimeoutSeconds,
 			TimeoutPolicy:   s.cfg.Timeouts.TimeoutPolicy,
-			OnMacos: func(ar *approvals.ApprovalRequest) {
+			OnMacos: func(machineCtx context.Context, ar *approvals.ApprovalRequest) {
 				if s.cfg.Timeouts.MacosNotificationSeconds == 0 {
 					return
 				}
@@ -125,9 +125,11 @@ func (s *Server) handler(ctx context.Context) http.Handler {
 					timeoutSecs = 30
 				}
 				go func() {
-					result, err := notifier.Notify(ctx, title, message, s.cfg.MacOS.PhpStormBundleID, timeoutSecs)
+					result, err := notifier.Notify(machineCtx, ar.ID, title, message, timeoutSecs)
 					if err != nil {
-						slog.Warn("terminal-notifier error", "id", ar.ID, "err", err)
+						if machineCtx.Err() == nil {
+							slog.Warn("alerter error", "id", ar.ID, "err", err)
+						}
 						return
 					}
 					if result == "" {
@@ -144,24 +146,42 @@ func (s *Server) handler(ctx context.Context) http.Handler {
 					}
 				}()
 			},
-			OnTelegram: func(ar *approvals.ApprovalRequest) {
+			OnTelegram: func(machineCtx context.Context, ar *approvals.ApprovalRequest) {
 				if s.bot == nil {
 					return
 				}
+				if machineCtx.Err() != nil {
+					return // already decided; skip sending
+				}
 				if err := s.bot.SendApprovalRequest(ar); err != nil {
 					slog.Error("telegram send failed", "id", ar.ID, "err", err)
+					return
+				}
+				// If the context was cancelled between the check above and the send
+				// completing, the request was already decided via another channel.
+				// Update the Telegram message immediately to remove stale buttons.
+				if machineCtx.Err() != nil {
+					s.bot.UpdateMessage(ar.ID, "")
 				}
 			},
 		})
 
 		select {
 		case decision := <-req.Decision:
+			req.Cancel() // stop pending notification goroutines before UpdateMessage blocks on Telegram API
 			slog.Info("permission decided",
 				"id", req.ID, "decision", decision.Value, "source", decision.Source)
+			if s.bot != nil && decision.Source != "telegram" {
+				s.bot.UpdateMessage(req.ID, decision.Value)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"decision":%q}`, decision.Value)
 		case <-r.Context().Done():
 			slog.Info("http connection dropped", "id", req.ID)
+			req.Cancel() // cancel immediately so macOS alerter is stopped without waiting for UpdateMessage
+			if s.bot != nil {
+				s.bot.UpdateMessage(req.ID, "") // "" = decided in Claude Code console
+			}
 		}
 	})
 

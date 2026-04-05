@@ -1,6 +1,7 @@
 package approvals_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,8 +16,8 @@ func TestMachineTimeoutPolicyDeny(t *testing.T) {
 		TelegramSeconds: 0,
 		TotalSeconds:    1,
 		TimeoutPolicy:   "deny",
-		OnMacos:         func(r *approvals.ApprovalRequest) {},
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	select {
@@ -40,8 +41,8 @@ func TestMachineTimeoutPolicyApprove(t *testing.T) {
 		TelegramSeconds: 0,
 		TotalSeconds:    1,
 		TimeoutPolicy:   "approve",
-		OnMacos:         func(r *approvals.ApprovalRequest) {},
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	select {
@@ -63,8 +64,8 @@ func TestMachineMacosCallbackFires(t *testing.T) {
 		TelegramSeconds: 10,
 		TotalSeconds:    30,
 		TimeoutPolicy:   "deny",
-		OnMacos:         func(r *approvals.ApprovalRequest) { fired <- struct{}{} },
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) { fired <- struct{}{} },
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	select {
@@ -85,8 +86,8 @@ func TestMachineTelegramCallbackFires(t *testing.T) {
 		TelegramSeconds: 1,
 		TotalSeconds:    30,
 		TimeoutPolicy:   "deny",
-		OnMacos:         func(r *approvals.ApprovalRequest) {},
-		OnTelegram:      func(r *approvals.ApprovalRequest) { fired <- struct{}{} },
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) { fired <- struct{}{} },
 	})
 
 	select {
@@ -107,8 +108,8 @@ func TestMachineMacosSkippedWhenZero(t *testing.T) {
 		TelegramSeconds: 0,
 		TotalSeconds:    1,
 		TimeoutPolicy:   "deny",
-		OnMacos:         func(r *approvals.ApprovalRequest) { macosCalledAfterCancel = true },
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) { macosCalledAfterCancel = true },
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	<-req.Decision // wait for timeout
@@ -125,8 +126,8 @@ func TestMachineNoTotalTimeoutWaitsIndefinitely(t *testing.T) {
 		TelegramSeconds: 0,
 		TotalSeconds:    0, // infinite — no goroutine should fire a decision
 		TimeoutPolicy:   "",
-		OnMacos:         func(r *approvals.ApprovalRequest) {},
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	// After 200ms, no decision should have been produced automatically.
@@ -147,8 +148,8 @@ func TestMachineFirstWriteWins(t *testing.T) {
 		TelegramSeconds: 0,
 		TotalSeconds:    60,
 		TimeoutPolicy:   "deny",
-		OnMacos:         func(r *approvals.ApprovalRequest) {},
-		OnTelegram:      func(r *approvals.ApprovalRequest) {},
+		OnMacos:         func(_ context.Context, r *approvals.ApprovalRequest) {},
+		OnTelegram:      func(_ context.Context, r *approvals.ApprovalRequest) {},
 	})
 
 	// External decision arrives (simulating macOS notifier)

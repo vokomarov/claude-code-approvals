@@ -26,10 +26,6 @@ type Timeouts struct {
 	TimeoutPolicy               string `yaml:"timeout_policy"`
 }
 
-type MacOS struct {
-	PhpStormBundleID string `yaml:"phpstorm_bundle_id"`
-}
-
 type Daemon struct {
 	Port int `yaml:"port"`
 }
@@ -41,14 +37,12 @@ type Paths struct {
 type Config struct {
 	Telegram Telegram `yaml:"telegram"`
 	Timeouts Timeouts `yaml:"timeouts"`
-	MacOS    MacOS    `yaml:"macos"`
 	Daemon   Daemon   `yaml:"daemon"`
 	Paths    Paths    `yaml:"paths"`
 }
 
 func DefaultPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "cc-approvals", "config.yaml")
+	return "config.yml"
 }
 
 func Load(path string) (*Config, error) {

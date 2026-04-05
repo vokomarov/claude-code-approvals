@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-`cc-approvals` is a macOS daemon that intercepts Claude Code permission prompts and routes them to the user via macOS native notifications (`terminal-notifier`) and/or Telegram inline-button messages. Claude Code invokes the `hook` subcommand as a subprocess per permission request; the hook POSTs to the daemon's HTTP API and returns the decision as `hookSpecificOutput` JSON.
+`cc-approvals` is a macOS daemon that intercepts Claude Code permission prompts and routes them to the user via macOS native notifications (`alerter`) and/or Telegram inline-button messages. Claude Code invokes the `hook` subcommand as a subprocess per permission request; the hook POSTs to the daemon's HTTP API and returns the decision as `hookSpecificOutput` JSON.
 
 ## Commands
 
@@ -113,7 +113,7 @@ signal → ctx.Done()
 | `internal/approvals` | `ApprovalRequest` type, `Store` (in-memory, mutex-guarded), `RunMachine` state machine |
 | `internal/config` | YAML config load + validation; default path `~/.config/cc-approvals/config.yaml` |
 | `internal/settings` | `Install(path, binaryPath)` writes `hooks.PermissionRequest` entry; `Uninstall(path)` removes it; atomic write via temp file + rename |
-| `internal/notifier` | Wraps `terminal-notifier` CLI; `Notify` blocks until user clicks or timeout |
+| `internal/notifier` | Wraps `alerter` CLI; `Notify` blocks until user clicks or timeout |
 | `internal/telegram` | Long-poll bot loop; sends approval messages and handles inline-button callbacks |
 
 ### Concurrency model

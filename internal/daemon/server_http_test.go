@@ -24,7 +24,6 @@ func testConfig(t *testing.T) *config.Config {
 			TimeoutPolicy:               "deny",
 		},
 		Daemon: config.Daemon{Port: 0},
-		MacOS:  config.MacOS{PhpStormBundleID: "com.test"},
 		Paths:  config.Paths{ClaudeSettings: t.TempDir() + "/settings.json"},
 	}
 }

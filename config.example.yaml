@@ -9,9 +9,6 @@ timeouts:
   total_timeout_seconds: 300        # hard ceiling in seconds; 0 = wait indefinitely (no timeout)
   timeout_policy: deny              # deny | approve — only used when total_timeout_seconds > 0
 
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
-
 daemon:
   port: 9753
 

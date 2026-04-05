@@ -21,7 +21,7 @@ reinstall: install
 	cp $(PLIST_SRC) $(PLIST_DST)
 	launchctl unload $(PLIST_DST)
 	launchctl load $(PLIST_DST)
-	@sleep 1 && $(MAKE) health
+	@sleep 3 && $(MAKE) health
 
 test:
 	go test ./...

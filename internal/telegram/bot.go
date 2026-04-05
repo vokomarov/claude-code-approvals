@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -34,11 +35,19 @@ func ParseCallback(data string) (decision, requestID string, err error) {
 	return decision, parts[1], nil
 }
 
+// sentMsg holds the Telegram message state for a pending approval.
+type sentMsg struct {
+	id   int
+	text string
+}
+
 // Bot wraps the Telegram API client.
 type Bot struct {
-	api     *tgbotapi.BotAPI
-	chatID  int64
-	tmplStr string // message template; empty = default
+	api      *tgbotapi.BotAPI
+	chatID   int64
+	tmplStr  string // message template; empty = default
+	mu       sync.Mutex
+	sentMsgs map[string]sentMsg // requestID → sent message
 }
 
 // NewBot creates a Bot. Returns an error if the token is invalid.
@@ -47,7 +56,7 @@ func NewBot(token string, chatID int64, messageTemplate string) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("telegram bot init: %w", err)
 	}
-	return &Bot{api: api, chatID: chatID, tmplStr: messageTemplate}, nil
+	return &Bot{api: api, chatID: chatID, tmplStr: messageTemplate, sentMsgs: make(map[string]sentMsg)}, nil
 }
 
 // SendApprovalRequest sends the approval notification for a request.
@@ -68,22 +77,27 @@ func (b *Bot) SendApprovalRequest(req *approvals.ApprovalRequest) error {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	_, err = b.api.Send(msg)
-	return err
+	sent, err := b.api.Send(msg)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.sentMsgs[req.ID] = sentMsg{id: sent.MessageID, text: text}
+	b.mu.Unlock()
+	return nil
 }
 
 // PollForever runs the Telegram long-poll loop until the context is cancelled.
-// When an inline button is pressed, it looks up the request by UUID in the store
-// and writes the decision to the request's Decision channel.
+// It suspends polling when the store has no pending requests to avoid unnecessary
+// API calls. When an inline button is pressed, it looks up the request by UUID in
+// the store and writes the decision to the request's Decision channel.
 func (b *Bot) PollForever(ctx context.Context, store *approvals.Store) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 30
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+		if err := store.WaitForPending(ctx); err != nil {
+			return // ctx cancelled
 		}
 
 		updates, err := b.api.GetUpdates(u)
@@ -121,10 +135,12 @@ func (b *Bot) handleCallback(cb *tgbotapi.CallbackQuery, store *approvals.Store)
 	}
 
 	// Non-blocking send: if already decided, silently drop.
+	decided := false
 	select {
 	case req.Decision <- approvals.Decision{Value: decision, Source: "telegram"}:
 		slog.Info("telegram decision received", "id", requestID, "decision", decision)
 		req.Cancel()
+		decided = true
 	default:
 		slog.Info("telegram callback ignored (already decided)", "id", requestID)
 	}
@@ -132,4 +148,40 @@ func (b *Bot) handleCallback(cb *tgbotapi.CallbackQuery, store *approvals.Store)
 	// Acknowledge the callback to remove the loading state in Telegram UI.
 	ack := tgbotapi.NewCallback(cb.ID, "")
 	_, _ = b.api.Request(ack)
+
+	if decided {
+		b.UpdateMessage(requestID, decision)
+	}
+}
+
+// UpdateMessage edits the sent Telegram message to replace "Waiting for response..."
+// with the decision label and removes the inline keyboard. decision is "allow", "deny",
+// or "" (connection dropped / decided in Claude Code console). No-op if no message was
+// sent for requestID.
+func (b *Bot) UpdateMessage(requestID, decision string) {
+	b.mu.Lock()
+	sm, ok := b.sentMsgs[requestID]
+	delete(b.sentMsgs, requestID)
+	b.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	label := "⚡ Handled directly"
+	switch decision {
+	case "allow":
+		label = "✅ Approved"
+	case "deny":
+		label = "❌ Denied"
+	}
+
+	newText := strings.Replace(sm.text, "Waiting for response...", label, 1)
+
+	edit := tgbotapi.NewEditMessageText(b.chatID, sm.id, newText)
+	edit.ParseMode = "Markdown"
+	edit.ReplyMarkup = &tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+	if _, err := b.api.Send(edit); err != nil {
+		slog.Warn("failed to update telegram message", "id", requestID, "err", err)
+	}
 }

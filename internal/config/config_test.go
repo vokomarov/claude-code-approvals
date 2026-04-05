@@ -3,7 +3,6 @@ package config_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/vokomarov/claude-code-approvals/internal/config"
@@ -29,8 +28,6 @@ timeouts:
   telegram_notification_seconds: 30
   total_timeout_seconds: 300
   timeout_policy: deny
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
 daemon:
   port: 9753
 paths:
@@ -58,8 +55,6 @@ timeouts:
   telegram_notification_seconds: 0
   total_timeout_seconds: 60
   timeout_policy: approve
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
 daemon:
   port: 9753
 paths:
@@ -81,8 +76,6 @@ timeouts:
   telegram_notification_seconds: 18
   total_timeout_seconds: 300
   timeout_policy: deny
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
 daemon:
   port: 9753
 paths:
@@ -104,8 +97,6 @@ timeouts:
   telegram_notification_seconds: 0
   total_timeout_seconds: 60
   timeout_policy: maybe
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
 daemon:
   port: 9753
 paths:
@@ -119,9 +110,8 @@ paths:
 
 func TestDefaultConfigPath(t *testing.T) {
 	path := config.DefaultPath()
-	want := filepath.Join(".config", "cc-approvals", "config.yaml")
-	if !strings.HasSuffix(path, want) {
-		t.Errorf("expected path ending in %q, got %q", want, path)
+	if path != "config.yml" {
+		t.Errorf("expected %q, got %q", "config.yml", path)
 	}
 }
 
@@ -234,8 +224,6 @@ timeouts:
   telegram_notification_seconds: 0
   total_timeout_seconds: 60
   timeout_policy: deny
-macos:
-  phpstorm_bundle_id: "com.jetbrains.phpstorm"
 daemon:
   port: 9753
 paths:

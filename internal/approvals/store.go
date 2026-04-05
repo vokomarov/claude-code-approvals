@@ -33,18 +33,31 @@ func newUUID() string {
 type Store struct {
 	mu   sync.RWMutex
 	reqs map[string]*ApprovalRequest
+	wake chan struct{} // signalled when the store transitions from empty to non-empty
 }
 
 // NewStore creates an empty Store.
 func NewStore() *Store {
-	return &Store{reqs: make(map[string]*ApprovalRequest)}
+	return &Store{
+		reqs: make(map[string]*ApprovalRequest),
+		wake: make(chan struct{}, 1),
+	}
 }
 
 // Add inserts a request into the store.
+// If the store was empty, it signals WaitForPending waiters.
 func (s *Store) Add(req *ApprovalRequest) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	wasEmpty := len(s.reqs) == 0
 	s.reqs[req.ID] = req
+	s.mu.Unlock()
+
+	if wasEmpty {
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // Get retrieves a request by ID.
@@ -71,4 +84,22 @@ func (s *Store) All() []*ApprovalRequest {
 		out = append(out, req)
 	}
 	return out
+}
+
+// WaitForPending blocks until the store has at least one pending request or ctx is done.
+// Returns ctx.Err() if the context is cancelled while waiting.
+func (s *Store) WaitForPending(ctx context.Context) error {
+	s.mu.RLock()
+	hasPending := len(s.reqs) > 0
+	s.mu.RUnlock()
+	if hasPending {
+		return nil
+	}
+
+	select {
+	case <-s.wake:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

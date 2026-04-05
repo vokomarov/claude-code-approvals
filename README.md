@@ -24,7 +24,7 @@ hook process  (reads stdin JSON, POSTs to daemon)
     ▼
 claude-code-approvals daemon  (localhost:9753)
     │
-    ├── t=15s ──► macOS notification  (terminal-notifier)
+    ├── t=15s ──► macOS notification  (alerter)
     │               [Approve] [Deny]
     │
     └── t=30s ──► Telegram message
@@ -39,7 +39,7 @@ The daemon runs as a launchd service. Claude Code invokes the `hook` subcommand 
 
 - macOS (Apple Silicon or Intel)
 - Go 1.21+
-- [terminal-notifier](https://github.com/julienXX/terminal-notifier): `brew install terminal-notifier`
+- [alerter](https://github.com/vjeantet/alerter): `brew install vjeantet/tap/alerter`
 - A Telegram bot token and chat ID (see [setup](#telegram-bot-setup))
 
 ---
@@ -145,7 +145,6 @@ make reinstall   # rebuild, update plist, restart daemon, health check
 | `timeouts.telegram_notification_seconds` | `30` | Delay before Telegram message. `0` = skip |
 | `timeouts.total_timeout_seconds` | `300` | Hard ceiling in seconds; `0` = wait indefinitely (no timeout) |
 | `timeouts.timeout_policy` | `deny` | Decision on hard timeout: `deny` or `approve`. Only used when `total_timeout_seconds > 0` |
-| `macos.phpstorm_bundle_id` | `com.jetbrains.phpstorm` | App focused on notification body click |
 | `telegram.message_template` | (built-in) | Go `text/template`; vars: `.SessionID` `.ToolName` `.ToolInput` `.CreatedAt` |
 | `paths.claude_settings` | — | Path to Claude Code `settings.json` modified by `install`/`uninstall` |
 | `daemon.port` | `9753` | Port for HTTP API and health endpoint |

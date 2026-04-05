@@ -51,7 +51,11 @@ func Run() {
 	timeout := 310 * time.Second
 	if cfg, err := config.Load(config.DefaultPath()); err == nil {
 		port = cfg.Daemon.Port
-		timeout = time.Duration(cfg.Timeouts.TotalTimeoutSeconds+10) * time.Second
+		if cfg.Timeouts.TotalTimeoutSeconds == 0 {
+			timeout = 0 // no timeout: wait indefinitely, mirroring total_timeout_seconds = 0
+		} else {
+			timeout = time.Duration(cfg.Timeouts.TotalTimeoutSeconds+10) * time.Second
+		}
 	}
 	run(os.Stdin, os.Stdout, fmt.Sprintf("http://localhost:%d", port), timeout)
 }

@@ -1,6 +1,7 @@
 package approvals_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -73,6 +74,63 @@ func TestRequestDecisionChannel(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Error("timeout reading decision")
+	}
+}
+
+func TestWaitForPendingImmediateWhenNonEmpty(t *testing.T) {
+	store := approvals.NewStore()
+	req := approvals.NewRequest("s", "Bash", "{}")
+	store.Add(req)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := store.WaitForPending(ctx); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestWaitForPendingBlocksUntilAdd(t *testing.T) {
+	store := approvals.NewStore()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- store.WaitForPending(ctx)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	select {
+	case err := <-done:
+		t.Fatalf("WaitForPending returned early: %v", err)
+	default:
+	}
+
+	req := approvals.NewRequest("s", "Bash", "{}")
+	store.Add(req)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil after Add, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPending did not unblock after Add")
+	}
+}
+
+func TestWaitForPendingCancelledContext(t *testing.T) {
+	store := approvals.NewStore()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := store.WaitForPending(ctx)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
 	}
 }
 

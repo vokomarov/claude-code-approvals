@@ -8,17 +8,20 @@ import (
 // MachineOpts configures the state machine for a single request.
 //
 // OnMacos and OnTelegram are notification callbacks triggered at their configured
-// times. They are responsible for sending the external notification (e.g. spawning
-// terminal-notifier or sending a Telegram message) and writing the result to
-// req.Decision. They must NOT call req.Cancel() themselves — context cleanup is
-// the consumer's responsibility (typically the daemon handler after reading Decision).
+// times. The context passed to each callback is the machine's lifetime context —
+// it is cancelled when req.Cancel() is called (e.g. after a decision is made or
+// the HTTP connection drops). Callbacks must use this context for any blocking
+// operations (subprocess execution, network calls) so they are cancelled promptly
+// when the request is no longer pending. They must NOT call req.Cancel() themselves —
+// context cleanup is the consumer's responsibility (typically the daemon handler
+// after reading Decision).
 type MachineOpts struct {
 	MacosSeconds    int    // 0 = skip macOS notification
 	TelegramSeconds int    // 0 = skip Telegram notification
 	TotalSeconds    int    // 0 = no hard ceiling (wait indefinitely); >0 = hard ceiling in seconds
 	TimeoutPolicy   string // "approve" | "deny" — only consulted when TotalSeconds > 0
-	OnMacos         func(*ApprovalRequest)
-	OnTelegram      func(*ApprovalRequest)
+	OnMacos         func(context.Context, *ApprovalRequest)
+	OnTelegram      func(context.Context, *ApprovalRequest)
 }
 
 // RunMachine starts background goroutines for a request and returns immediately.
@@ -38,13 +41,13 @@ func RunMachine(req *ApprovalRequest, opts MachineOpts) {
 		origCancel()
 	}
 
-	startTimer := func(seconds int, cb func(*ApprovalRequest)) {
+	startTimer := func(seconds int, cb func(context.Context, *ApprovalRequest)) {
 		go func() {
 			t := time.NewTimer(time.Duration(seconds) * time.Second)
 			defer t.Stop()
 			select {
 			case <-t.C:
-				cb(req)
+				cb(ctx, req)
 			case <-ctx.Done():
 			}
 		}()
