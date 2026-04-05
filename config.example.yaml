@@ -1,0 +1,16 @@
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_FROM_BOTFATHER"
+  chat_id: 123456789
+  message_template: ""  # leave empty for default; Go text/template syntax
+
+timeouts:
+  macos_notification_seconds: 15   # delay before macOS notification fires; 0 = skip macOS notification entirely
+  telegram_notification_seconds: 30 # delay before Telegram notification fires; 0 = skip Telegram notification entirely
+  total_timeout_seconds: 300        # hard ceiling in seconds; 0 = wait indefinitely (no timeout)
+  timeout_policy: deny              # deny | approve — only used when total_timeout_seconds > 0
+
+daemon:
+  port: 9753
+
+paths:
+  claude_settings: "~/.dotfiles/config/claude/settings.json"
