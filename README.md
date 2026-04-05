@@ -79,7 +79,25 @@ paths:
 
 `config.yml` is gitignored — it stays local.
 
-### 3. Install the launchd service
+### 3. Configure the launchd service file
+
+Open `launchd/com.vokomarov.cc-approvals.plist` and update the paths to match your environment:
+
+```xml
+<!-- Path to the installed binary -->
+<string>/Users/YOUR_USERNAME/go/bin/claude-code-approvals</string>
+
+<!-- Working directory (where config.yml lives) -->
+<string>/Users/YOUR_USERNAME/go/src/github.com/vokomarov/claude-code-approvals</string>
+
+<!-- Log output paths -->
+<string>/Users/YOUR_USERNAME/go/src/github.com/vokomarov/claude-code-approvals/logs/cc-approvals.log</string>
+<string>/Users/YOUR_USERNAME/go/src/github.com/vokomarov/claude-code-approvals/logs/cc-approvals-error.log</string>
+```
+
+Replace `YOUR_USERNAME` with your macOS username (`whoami`).
+
+### 4. Install the launchd service
 
 ```bash
 make service-install
@@ -92,7 +110,7 @@ make health
 # → {"status":"ok"}
 ```
 
-### 4. Register the hook in Claude Code settings (one-time)
+### 5. Register the hook in Claude Code settings (one-time)
 
 ```bash
 claude-code-approvals install

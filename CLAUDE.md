@@ -144,6 +144,7 @@ When disabled, the hook receives 204 and exits silently — Claude Code falls ba
 - Config lives at `~/.config/cc-approvals/config.yaml` (gitignored) — copy from `config.example.yaml` and fill in Telegram credentials before starting the daemon
 - `~/go/bin` must be in `PATH`; macOS ships `/usr/bin/cc` (clang) which shadows Go binaries
 - `permissionPromptTool` settings.json key is undocumented and **does not work** in Claude Code IDE sessions — use the `PermissionRequest` hook instead
+- `launchd/com.vokomarov.cc-approvals.plist` has hardcoded paths (`/Users/vovan/...`) — update before running `make service-install` on a different machine
 
 ## Known Gaps
 
